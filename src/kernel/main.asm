@@ -1,0 +1,1 @@
+	db '10BYTEMSG!'
