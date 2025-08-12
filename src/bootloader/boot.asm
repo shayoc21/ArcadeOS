@@ -183,7 +183,7 @@ read_disk:
 	pop di
 	ret
 	
-intro		 db 'ArcadeOS, Developed by Shay OConnor <shaywoconnor@hotmail.com, github: shayoc21>', ENDLINE, ENDSTRING
+intro		 db 'Welcome to this really cool operating system that shay oconnor wrote', ENDLINE, ENDSTRING
 introlength	 equ $ - intro - 0x01
 
 readingfloppy	 db 'Reading Floppy Disk...', ENDLINE, ENDSTRING
