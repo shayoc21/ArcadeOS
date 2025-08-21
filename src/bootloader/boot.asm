@@ -40,27 +40,17 @@ cls:
 	popa
 	ret
 
-;ds:dx = message address, cx = length
+;si = message offset
 print:
-	push bx
-	push ax
-	push si
-	
-	mov si, dx
-	mov bx, 0
+	lodsb
+	or al, al
+	jz .finished
 	mov ah, 0x0E
-.printloop:
-	mov al, [si + bx]
 	int 0x10
-	inc bx
-	cmp bx, cx
-	je .printfinished
-	jmp .printloop
-.printfinished:
-	pop si
-	pop ax
-	pop bx
+	jmp print
+.finished:
 	ret
+
 main:	
 	mov ax, 0
 	mov ds, ax
@@ -68,37 +58,121 @@ main:
 
 	mov ss, ax
 	mov sp, 0x7C00
-	
-	call cls
-	push dx
-	push cx
-	mov dx, intro
-	mov cx, introlength
-	call print
-	pop cx
-	pop dx
 
-	;read first 8 sectors into memory
-	mov ax, 0x07E0
+	;get size of root directory
+	mov ax, 0x0020
+	mul word [directory_entries]
+	div word [bytes_per_sector]
+	mov cl, al
+	
+	mov al, [number_of_fats]
+	mul word [sectors_per_fat]
+	add ax, [reserved_sectors]
+	push ax
+	mov ax, 0x07C0
 	mov es, ax
-	mov bx, 0x0000
-	mov cl, 0x08
-	mov ax, 0x01
+	pop ax
+	mov bx, 0x0200
+	;should read the root directory into 0x07C0:0x0200
 	mov dl, [drive_number]
 	call read_disk
+	
+	mov si, kernelname
+	mov di, bx
+	call search_directory
+	
+	mov ax, 0x0050
+	mov es, ax
+	mov bx, 0x0000	
+	push bx
+	
+;now that the fat is loaded and i have the first cluster, I can load the kernel. this is the final step of my bootloader. loads into 0x0050:0x0000 
+loadkernel:
 
-	;test... prints a message from outside the boot sector
-	push dx
+	mov ax, [cluster]
+	pop bx
+	sub ax, 0x0002
+	xor cx, cx
+	mov cl, byte [sectors_per_cluster]
+	mul cx
+	call read_disk
+	push bx
+
+	mov ax, word [cluster]
+	mov cx, ax
+	mov dx, ax
+	shr dx, 0x0001
+	add cx, dx
+	mov bx, 0x0200
+	add bx, cx
+	mov dx, word [bx]
+	test ax, 0x0001
+	jnz .odd
+
+.even:
+	and dx, 0000111111111111b
+	jmp .done
+.odd:
+	shr dx, 0x0004
+
+.done:
+	mov word [cluster], dx
+	cmp dx, 0x0FF0 ; end of file
+	jb loadkernel
+
+done:
+	push word 0x0050
+	push word 0x0000
+	retf	;jump into kernel
+
+;
+;
+;	fat root directory search:
+;
+;
+;
+
+
+;si points to file name, es:di points to root directory in memory, will load the fat after the bootloader and store the first cluster in "cluster"
+search_directory:
+	mov cx, [directory_entries]
+
+.loop:
 	push cx
-	mov dx, 0x7FE8
-	mov cx, 0x0A
-	call print
+	mov cx, 0x0B
+	push di
+	rep cmpsb
+	pop di
+	je .load_fat
 	pop cx
-	pop dx
+	add di, 0x20	
+	loop .loop
+	jmp .failure
 
-	jmp .halt
-.halt:
-	jmp .halt 	; forbids CPU from starting up again, if it does then it will get stuck in this loop.
+.failure:
+	mov si, fatfail
+	call print
+	ret
+
+.load_fat:
+	mov dx, [di + 0x001A] ;di contains address of entry, byte 26 is the first cluster
+	mov word [cluster], dx	
+	xor ax, ax
+	mov al, [number_of_fats]
+	mul word [sectors_per_fat]
+	mov cl, al
+	mov ax, word [reserved_sectors]
+	mov bx, 0x0200
+	;reads the FAT to 0x07C0:0x0200
+	call read_disk
+	ret
+
+;
+;
+;	disk reading
+;
+;
+
 
 ;ax = lba, returns head in dh, cx[0-5] = sector, cx[6-15] = cylinder
 lba_chs_conversion:
@@ -125,13 +199,8 @@ lba_chs_conversion:
 	ret
 ;ax = lba, cl = number of sectors to read, dl = drive number, es:bx = address to store read data
 read_disk:
-	push dx
-	push cx
-	mov dx, readingfloppy
-	mov cx, readinglength
+	mov si, readingfloppy
 	call print
-	pop cx
-	pop dx
 
 	push di
 	
@@ -148,9 +217,8 @@ read_disk:
 	int 0x13
 	jnc .done
 	
-	mov dx, readingretry
-	mov cx, retrylength
-	call print
+	mov si, readingretry
+	call print	
 	
 	mov ah, 0x1
 	int 0x13
@@ -162,41 +230,35 @@ read_disk:
 	jz .fail
 	jmp .retry
 .done:
-	popa	
-	push dx 
-	push cx
-	mov dx, readingsuccess
-	mov cx, successlength
+	mov si, readingsuccess
 	call print
-	pop cx
-	pop dx
 	pop di
 	ret
 .fail:
-	push dx 
-	push cx
-	mov dx, readingfail
-	mov cx, faillength
+	mov si, readingfail
 	call print
-	pop cx
-	pop dx
 	pop di
 	ret
-	
-intro		 db 'Welcome to this really cool operating system that shay oconnor wrote', ENDLINE, ENDSTRING
-introlength	 equ $ - intro - 0x01
 
-readingfloppy	 db 'Reading Floppy Disk...', ENDLINE, ENDSTRING
-readinglength 	 equ $ - readingfloppy - 0x01
+;
+;
+;	data
+;
+;
 
-readingfail	 db '	...Error reading Floppy disk', ENDLINE, ENDSTRING
-faillength	 equ $ - readingfail - 0x01
+readingfloppy	 db 'Reading disk', ENDLINE, ENDSTRING
 
-readingsuccess	 db '	...Successfully read from Floppy disk', ENDLINE, ENDSTRING
-successlength	 equ $ - readingsuccess - 0x01
+readingfail	 db '...Error reading disk', ENDLINE, ENDSTRING
 
-readingretry	 db '	...Retrying read from Floppy disk', ENDLINE, ENDSTRING
-retrylength	 equ $ - readingretry - 0x01
+readingsuccess	 db '...Successfully read disk', ENDLINE, ENDSTRING
+
+readingretry	 db '...Retrying read', ENDLINE, ENDSTRING
+
+kernelname	 db 'KERNEL  BIN', 0x00
+
+fatfail		 db '	...Failed to read file from FAT', ENDLINE, ENDSTRING
+
+cluster	dw 0x0000
 
 times 510-($-$$) db 0
 dw 0xAA55
