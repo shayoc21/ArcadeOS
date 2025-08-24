@@ -13,7 +13,6 @@ $(BUILD_DIR)/main_floppy.img: bootloader kernel
 	mkfs.fat -F 12 -n "NBOS" $(BUILD_DIR)/main_floppy.img
 	dd if=$(BUILD_DIR)/bootloader.bin of=$(BUILD_DIR)/main_floppy.img conv=notrunc
 	mcopy -i $(BUILD_DIR)/main_floppy.img $(BUILD_DIR)/kernel.bin "::kernel.bin"
-	echo -n "LOADEDDISK" | dd of=$(BUILD_DIR)/main_floppy.img bs=1 seek=1000 conv=notrunc
 
 # bootloader
 bootloader: $(BUILD_DIR)/bootloader.bin

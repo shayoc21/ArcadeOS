@@ -42,13 +42,16 @@ cls:
 
 ;si = message offset
 print:
+	push ax
+.printloop:
 	lodsb
 	or al, al
 	jz .finished
 	mov ah, 0x0E
 	int 0x10
-	jmp print
+	jmp .printloop
 .finished:
+	pop ax
 	ret
 
 main:	
@@ -58,12 +61,13 @@ main:
 
 	mov ss, ax
 	mov sp, 0x7C00
+	call cls
 
 	;get size of root directory
 	mov ax, 0x0020
 	mul word [directory_entries]
 	div word [bytes_per_sector]
-	mov cl, al
+	mov cx, ax
 	
 	mov al, [number_of_fats]
 	mul word [sectors_per_fat]
@@ -85,45 +89,60 @@ main:
 	mov es, ax
 	mov bx, 0x0000	
 	push bx
-	
+
 ;now that the fat is loaded and i have the first cluster, I can load the kernel. this is the final step of my bootloader. loads into 0x0050:0x0000 
 loadkernel:
 
 	mov ax, [cluster]
-	pop bx
 	sub ax, 0x0002
 	xor cx, cx
 	mov cl, byte [sectors_per_cluster]
 	mul cx
+	add ax, 0x21
 	call read_disk
-	push bx
-
-	mov ax, word [cluster]
+	
+	mov ax, [cluster]
 	mov cx, ax
-	mov dx, ax
-	shr dx, 0x0001
-	add cx, dx
-	mov bx, 0x0200
-	add bx, cx
-	mov dx, word [bx]
-	test ax, 0x0001
-	jnz .odd
+	shr ax, 1
+	add cx, ax
+	mov si, cx
+	push ds
+	mov ax, 0x07C0
+	mov ds, ax
+	mov ax, [ds:si + 0x200]
+	pop ds
+	
+	test word [cluster], 0x0001
+	jnz .odd_cluster
 
-.even:
-	and dx, 0000111111111111b
+.even_cluster:
+	and ax, 0x0FFF
 	jmp .done
-.odd:
-	shr dx, 0x0004
+.odd_cluster:
+	shr ax, 0x04
 
 .done:
-	mov word [cluster], dx
-	cmp dx, 0x0FF0 ; end of file
-	jb loadkernel
+	mov [cluster], ax
+	cmp ax, 0x0FF8
+	jae done
+	
+	mov ax, [sectors_per_cluster]
+	mov cx, 0x200
+	mul cx
+	mov cx, 0x10
+	div cx
+	mov bx, es
+	add bx, ax
+	mov es, bx
+	xor bx, bx
+	
+	jmp loadkernel
+
 
 done:
 	push word 0x0050
 	push word 0x0000
-	retf	;jump into kernel
+	retf	;jump into kernel	
 
 ;
 ;
@@ -141,7 +160,9 @@ search_directory:
 	push cx
 	mov cx, 0x0B
 	push di
+	push si
 	rep cmpsb
+	pop si
 	pop di
 	je .load_fat
 	pop cx
@@ -155,7 +176,7 @@ search_directory:
 	ret
 
 .load_fat:
-	mov dx, [di + 0x001A] ;di contains address of entry, byte 26 is the first cluster
+	mov dx, [es:di + 0x1A]
 	mov word [cluster], dx	
 	xor ax, ax
 	mov al, [number_of_fats]
@@ -165,6 +186,7 @@ search_directory:
 	mov bx, 0x0200
 	;reads the FAT to 0x07C0:0x0200
 	call read_disk
+	pop cx
 	ret
 
 ;
@@ -199,46 +221,64 @@ lba_chs_conversion:
 	ret
 ;ax = lba, cl = number of sectors to read, dl = drive number, es:bx = address to store read data
 read_disk:
+	
+	push ax
+	push bx
+	push cx
+	push dx
+	push di
+	
 	mov si, readingfloppy
 	call print
 
-	push di
-	
 	push cx
 	call lba_chs_conversion
 	pop ax				;pops cl into ax for int13h
 	
 	mov ah, 0x02
-	mov di, 5
+	mov di, 0x03
 
 .retry:
 	pusha
 	stc
 	int 0x13
 	jnc .done
-	
+
 	mov si, readingretry
-	call print	
-	
-	mov ah, 0x1
-	int 0x13
-	
+	call print
+
+	mov al, ah      
 	mov ah, 0x0E
-	int 0x10
+	int 0x10 
+
 	popa
+	
+	pusha
+	mov ah, 0x0
+	stc
+	int 13h
+	jc .fail
+	popa
+	
 	dec di
 	jz .fail
 	jmp .retry
 .done:
+	popa
+
+	pop di
+	pop dx
+	pop cx
+	pop bx
+	pop ax
+
 	mov si, readingsuccess
 	call print
-	pop di
 	ret
 .fail:
 	mov si, readingfail
 	call print
-	pop di
-	ret
+	hlt
 
 ;
 ;
@@ -246,17 +286,17 @@ read_disk:
 ;
 ;
 
-readingfloppy	 db 'Reading disk', ENDLINE, ENDSTRING
+readingfloppy	 db 'Reading', ENDLINE, ENDSTRING
 
-readingfail	 db '...Error reading disk', ENDLINE, ENDSTRING
+readingfail	 db 'Error r', ENDLINE, ENDSTRING
 
-readingsuccess	 db '...Successfully read disk', ENDLINE, ENDSTRING
+readingsuccess	 db 'Successfully r', ENDLINE, ENDSTRING
 
-readingretry	 db '...Retrying read', ENDLINE, ENDSTRING
+readingretry	 db 'Retrying r', ENDLINE, ENDSTRING
 
 kernelname	 db 'KERNEL  BIN', 0x00
 
-fatfail		 db '	...Failed to read file from FAT', ENDLINE, ENDSTRING
+fatfail		 db 'Failed to r', ENDLINE, ENDSTRING
 
 cluster	dw 0x0000
 
