@@ -7,25 +7,7 @@ bits 16
 start:
 	jmp main
 
-print:
-	push ax
-.printloop:
-	lodsb
-	or al, al
-	jz .finished
-	mov ah, 0x0E
-	int 0x10
-	jmp .printloop
-.finished:
-	pop ax
-	ret
-
-cls:
-	pusha
-	mov ax, 0x0003
-	int 0x10
-	popa
-	ret
+%include "./src/include/print.asm"
 
 init:
 	;prints a message to tell the user the kernel has loaded, then clears the screen
