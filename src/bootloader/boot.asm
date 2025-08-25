@@ -55,9 +55,10 @@ print:
 	ret
 
 main:	
-	mov ax, 0
+	xor ax, ax
 	mov ds, ax
 	mov es, ax
+	mov dl, al
 
 	mov ss, ax
 	mov sp, 0x7C00
@@ -79,15 +80,19 @@ main:
 	mov bx, 0x0200
 	;should read the root directory into 0x07C0:0x0200
 	mov dl, [drive_number]
+	mov si, root
+	call print
 	call read_disk
-	
+
+	mov si, fat 	
+	call print
 	mov si, kernelname
 	mov di, bx
 	call search_directory
 	
 	mov ax, 0x0050
 	mov es, ax
-	mov bx, 0x0000	
+	xor bx, bx
 	push bx
 
 ;now that the fat is loaded and i have the first cluster, I can load the kernel. this is the final step of my bootloader. loads into 0x0050:0x0000 
@@ -99,6 +104,8 @@ loadkernel:
 	mov cl, byte [sectors_per_cluster]
 	mul cx
 	add ax, 0x21
+	mov si, kernel
+	call print
 	call read_disk
 	
 	mov ax, [cluster]
@@ -171,7 +178,7 @@ search_directory:
 	jmp .failure
 
 .failure:
-	mov si, fatfail
+	mov si, error
 	call print
 	ret
 
@@ -227,9 +234,6 @@ read_disk:
 	push cx
 	push dx
 	push di
-	
-	mov si, readingfloppy
-	call print
 
 	push cx
 	call lba_chs_conversion
@@ -243,9 +247,6 @@ read_disk:
 	stc
 	int 0x13
 	jnc .done
-
-	mov si, readingretry
-	call print
 
 	mov al, ah      
 	mov ah, 0x0E
@@ -272,11 +273,9 @@ read_disk:
 	pop bx
 	pop ax
 
-	mov si, readingsuccess
-	call print
 	ret
 .fail:
-	mov si, readingfail
+	mov si, error
 	call print
 	hlt
 
@@ -286,17 +285,14 @@ read_disk:
 ;
 ;
 
-readingfloppy	 db 'Reading', ENDLINE, ENDSTRING
+root	db  'Loading Root', ENDLINE, ENDSTRING
+fat 	db  'Loading FATs', ENDLINE, ENDSTRING
+kernel	db  'Loading Kernel Cluster', ENDLINE, ENDSTRING
 
-readingfail	 db 'Error r', ENDLINE, ENDSTRING
-
-readingsuccess	 db 'Successfully r', ENDLINE, ENDSTRING
-
-readingretry	 db 'Retrying r', ENDLINE, ENDSTRING
+error 	db  'Fatal Error', ENDLINE, ENDSTRING
 
 kernelname	 db 'KERNEL  BIN', 0x00
 
-fatfail		 db 'Failed to r', ENDLINE, ENDSTRING
 
 cluster	dw 0x0000
 
