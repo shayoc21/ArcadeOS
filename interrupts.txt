@@ -1,0 +1,18 @@
+My operating system is modelled after DOS, and so I will use a similar interrupt scheme.
+Many of these interrupts will be wrappers for simple BIOS interrupts, like int 10h or 16h, others will be more comprehensive, like int 21h,10h will load an entire program into memory.
+
+Interrupts:
+
+	int 20h:	Soft restarts the operating system, returns to "main menu".
+	int 21h:
+			ah = 0x00: 	Prints a string pointed to by si.
+			ah = 0x01:	Prints a single character stored in al
+			ah = 0x02:	Reads a character from keyboard -- Blocking
+					Returns scancode in ah, ascii in al
+			ah = 0x03:	Polls keyboard -- Non-Blocking
+					Returns scancode in ah, ascii in al
+					ZF = 0 if a key pressed
+			ah = 0x10:	Loads a program, filename pointed to by si
+
+				
+			

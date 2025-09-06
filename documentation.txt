@@ -1,0 +1,7 @@
+bootloader is loaded into 0x07C0:0x0000
+the bootloader then loads the:
+	fat root directory into 0x07C0:0x0200
+	file allocation table/s into 0x09A0:0x0600 - tried 0x0000 but this caused bugs when loading clusters..
+	kernel into 0x0050:0x0000
+
+Programs will be given the entirety of memory above 0x1000:0x0000 (960KB), the stack for programs grows from 0x0000:0x7C00, just below the bootloader
