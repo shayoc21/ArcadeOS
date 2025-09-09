@@ -1,4 +1,3 @@
-# arcadeos
 
 simple 16 bit real mode operating system written entirely in x86 nasm.
 
