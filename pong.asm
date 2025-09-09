@@ -24,18 +24,22 @@ start:
 
 
 init:
-	;test.. clears screen and prints a smiley face..
-	mov ax, 0x1000
-	mov ds, ax
 	;switch to 13h vga mode
 	mov ax, 0x0013
 	int 0x10
+	mov ax, 0xA000
+	mov es, ax	;es points to vga vram, will not be double buffering as pong is relatively static
+
+	call drawbackground
+	call drawplayers
+	call drawscore
+	call drawball
 
 mainloop:
-	;game loop
 	call pollinputs
-	call refreshscreen
-	jmp mainloop
+	call updategame
+	call updatescreen
+	call playaudio
 
 pollinputs:
 	;for now just checks for an escape key
@@ -81,73 +85,83 @@ pollinputs:
 	.continue:
 		ret
 
-refreshscreen:
-	push es
-	push ds
-	mov ax, 0x9000
-	mov es, ax
-	call drawscene
-	call .swapbuffers
-	pop ds
-	pop es
+updategame:
+	;checks ball collisions and updates velocity/score
+	call .hasballcollided
+	cmp dh, 0x00
+	jnz .updatevelocity	;updatevelocity and updatescore both return, as only one should be called
+	cmp dl, 0x00
+	jnz .updatescore
 	ret
 
-.swapbuffers:
-
-	push ax
-	push dx
-	.wait_not_retrace:
-		mov dx, 0x03DA
-		in al, dx
-		test al, 0x08
-		jnz .wait_not_retrace
-	.wait_retrace:
-		mov dx, 0x03DA
-		in al, dx
-		test al, 0x08
-		jz .wait_retrace
-	pop dx
-	pop ax
-	mov ax, 0x9000
-	mov ds, ax
-	mov ax, 0xA000
-	mov es, ax
-	xor di, di
-	xor si, si
-	mov cx, 0xFA00
-	rep movsb
-	pop ds
-	pop es
+;function will store boolean (has the ball collided?) 
+	; dh for reflective surfaces (1 for paddel, 2 for ceiling/floor)
+	; and dl for the goal (1 for left point and 2 for right point)
+.hasballcollided:
+	;annoying function ill implement later
 	ret
 
-drawscene:
-
-	call .drawbackground
-	call .drawborder
+.updatevelocity:
+	cmp dh, 0x01
+	jz .horizontal
+	cmp dh, 0x02
+	jz .vertical
+	ret
+.horizontal:
+	;flip most significant bit
+	mov dl, byte [dx]
+	xor dl, 10000000b
+	mov [dx], dl
+	ret
+.vertical:
+	mov dl, byte [dy]
+	xor dl, 10000000b
+	mov [dy], dl
 	ret
 
-.drawbackground:
-	xor di, di
-	mov al, BGCOLOUR
-	mov cx, 0xFA00
-	rep stosb
+.updatescore:
+	mov [scorehaschanged], 0x01
+	mov al, byte [score]
+	cmp dl, 0x01
+	jz .awardleft
+	cmp dl, 0x02
+	jz .awardright
 	ret
-.drawborder:
-	mov ax, BORDERX1
-	mov bx, BORDERX2
-	mov cx, 3
-	mov dh, BORDERCOLOUR
-	mov dl, BORDERY1
-	call horizontalLine
-	mov ax, BORDERX1
-	mov bx, BORDERX2
-	mov cx, 3
-	mov dh, BORDERCOLOUR
-	mov dl, BORDERY2
-	call horizontalLine
+.awardleft:
+	add al, 0x10
+	ret
+.awardright:
+	add al, 0x01
 	ret
 
-;generic draw functions
+updatescreen:
+	;updates the ball, then checks if anything else has moved before updating it
+	call .updateball
+	
+	mov al, byte [p1hasmoved]
+	cmp al, 0x00
+	jnz .updatep1
+	
+	mov al, byte [p2hasmoved]
+	cmp al, 0x00
+	jnz .updatep2
+
+	mov al, byte [scorehaschanged]
+	cmp al, 0x00
+	jnz .updatescoreboard
+
+.updateball:
+	ret
+.updatep1:
+	ret
+.updatep2:
+	ret
+.updatescoreboard:
+	ret
+
+playaudio:
+	;might implement audio in the future
+	ret
 
 ;ax = start x, bx = end x, cx = thickness, dh = colour, dl = start y (top)
 horizontalLine:
@@ -209,12 +223,27 @@ verticalLine:
 	dec cx
 	cmp cx, 0x00
 	jnz .vlineloop
-	
-dot:
+
+
 
 section .data
 
 	welcome db 'Pong... if reading this means interrupt 21 successfully loaded pong into 0x1000:0x0000, and the kernel handed control over successfully', 0x0D, 0x0A, 0x00
 	p1position db 100
 	p2position db 100
+	p1hasmoved db 0x00
+	p2hasmoved db 0x00
+
+	score db 0x00	;one nibble per player, first to 15 wins
+	scorehaschanged db 0x00
 	
+	;ball starts out as below, dy/dx = 1/5
+	;
+	;	     .....>
+	;	x.....
+	;
+		
+	dx 0x00000101   ;5px/f right, msb represents direction 0 ->, 1 <-
+	dy 0x00000001   ;1px/f up, msb represents direction 0 /\, 1 \/
+	
+
